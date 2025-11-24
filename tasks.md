@@ -54,3 +54,10 @@ python makeGraph.py
 选择专家的核心理念是用有限的专家提供尽可能多的积极活
 
 为了实现这一目标，我们首先通过贪婪算法在训练数据上找到最佳选择，然后利用它们训练一个浅层网络作为专家路由器，基于输入表示选择专家。
+
+```bash
+# 生成训练门控网络（controlNN）的数据集
+python makeLabel.py
+# 训练门控网络
+python controlNN/train.py
+```

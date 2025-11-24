@@ -1,6 +1,8 @@
 # *_*coding:utf-8 *_*
 import sys
-sys.path.append("E:/py/Nlp/NLP")
+import os
+# 添加项目根目录到路径
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import torch.nn as nn
 import torch.utils.data
@@ -27,7 +29,15 @@ trainSet, valiSet = torch.utils.data.random_split(dataSet, [int(0.8 * len(dataSe
 trainLoader = torch.utils.data.DataLoader(dataset=trainSet, batch_size=2048, shuffle=True)
 valiLoader = torch.utils.data.DataLoader(dataset=valiSet, batch_size=2048, shuffle=False)
 testSize = len(valiSet)
-device = torch.device("cuda")
+# 从环境变量获取设备，如果没有设置则使用默认值
+from dotenv import load_dotenv
+load_dotenv()
+device_str = os.getenv("DEVICE")
+if device_str is None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+else:
+    device = torch.device(device_str)
+print("running on device: ", device)
 
 
 learningRate = 1e-3

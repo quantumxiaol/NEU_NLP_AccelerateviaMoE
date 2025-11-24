@@ -111,6 +111,11 @@ def beamSearch(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id,
     finalOutput = None
     graphM = None
     
+    # Label版本需要确保目录存在
+    if expChoice is not None and labelIndex is not None:
+        os.makedirs("data4Gate/input", exist_ok=True)
+        os.makedirs("data4Gate/label", exist_ok=True)
+    
     # Graph版本需要初始化graphM
     if graphCal:
         from tool.Global import d_ff

@@ -5,7 +5,7 @@ epochs = 20  # 训练迭代轮次。
 # 是否使用GPU
 use_gpu = True
 
-gpu_index = 0  # 创建摸摸胸训练时，使用的GPU序号
+gpu_index = 0  # 创建模型训练时，使用的GPU序号
 map_gpu_index = 0  # 载入模型时，使用的GPU序号（如果设备没变，则与gpu_index一致）
 
 # encoder和decoder的层数

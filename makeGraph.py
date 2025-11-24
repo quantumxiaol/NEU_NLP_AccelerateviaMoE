@@ -40,8 +40,8 @@ if __name__ == '__main__':
     print(dec_vocab2id[char_space])
     print('-----------------')
     model = Transformer(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, 0, 0, 0.1, device=device)
-    # 根据实际设备设置 map_location
-    m_state_dict = torch.load('./save/de2en_2k.pt', map_location=device)
+    # 先加载到CPU，然后移动到目标设备（确保跨设备兼容性：CUDA/CPU/MPS）
+    m_state_dict = torch.load('./save/de2en_2k.pt', map_location='cpu')
     model.load_state_dict(m_state_dict)
     model.to(device)
     model.eval()
