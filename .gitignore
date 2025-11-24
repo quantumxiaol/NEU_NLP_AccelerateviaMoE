@@ -16,6 +16,7 @@ uv.lock
 # Models
 weights/
 results/
+*.pt
 
 # Datasets
 datasets/

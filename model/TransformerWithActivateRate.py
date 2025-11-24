@@ -62,12 +62,14 @@ class Transformer(nn.Module):
         decoder_self_mask = mask.to(device)
 
         if enc_output is None:
-            enc_output = self.encoder(enc_input, encoder_pad_mask)
-        dec_output = self.decoder(dec_input, decoder_self_mask, enc_output, encoder_pad_mask)
+            enc_output, encoder_activation_rates = self.encoder(enc_input, encoder_pad_mask)
+        else:
+            encoder_activation_rates = None
+        dec_output, decoder_activation_rates = self.decoder(dec_input, decoder_self_mask, enc_output, encoder_pad_mask)
         output = self.final(dec_output)
         result = output.view(-1, output.size(-1))  # result: [batch_size x tgt_len, tgt_vocab_size]
 
-        return enc_output,result
+        return enc_output, result, encoder_activation_rates, decoder_activation_rates
 
 
 class Encoder(nn.Module):
@@ -84,10 +86,12 @@ class Encoder(nn.Module):
         src = self.enc_embedding(enc_inputs) * math.sqrt(self.d_model)  # (batch_size,len,d_model)
         x = self.pos_encoder(src)
         x = self.dropout(x)
+        activation_rates = []
         for layer in self.layers:
-            x = layer(x, mask)
+            x, ratio_neg = layer(x, mask)
+            activation_rates.append(ratio_neg)
         out = self.norm(x)
-        return out
+        return out, activation_rates
 
 
 class EncoderLayer(nn.Module):
@@ -116,15 +120,12 @@ class EncoderLayer(nn.Module):
 
         # ffn layer
         ffn_out ,ratio_neg = self.ffn(out1)
-        # ffn_out = self.ffn(out1)
         ffn_out = self.drop2(ffn_out)
-
-        # print("ratio_neg:",ratio_neg)
 
         # add
         out2 = res + ffn_out
 
-        return out2
+        return out2, ratio_neg
 
 
 class Decoder(nn.Module):
@@ -140,9 +141,11 @@ class Decoder(nn.Module):
         src = self.dec_embedding(dec_inputs) * math.sqrt(self.d_model)  # (bs,len,d_model)
         src = self.pos_encoder(src)
         src = self.dropout(src)
+        activation_rates = []
         for layer in self.layers:
-            src = layer(src, self_mask, enc_output, encoder_mask)
-        return src
+            src, ratio_neg = layer(src, self_mask, enc_output, encoder_mask)
+            activation_rates.append(ratio_neg)
+        return src, activation_rates
 
 
 class DecoderLayer(nn.Module):
@@ -174,17 +177,16 @@ class DecoderLayer(nn.Module):
 
         # add & norm
         x = res + ende_attn_out
-        res, out2 = ende_attn_out, self.norm3(x)
+        res, out2 = x, self.norm3(x)
 
         # ffn layer
-        ffn_out ,radio_neg= self.ffn(out2)
+        ffn_out ,ratio_neg = self.ffn(out2)
         ffn_out = self.drop3(ffn_out)
 
-        # print("Decoder radio_neg:",radio_neg)
         # add
         out3 = res + ffn_out
 
-        return out3
+        return out3, ratio_neg
 
 
 class PositionalEncoding(nn.Module):
@@ -272,10 +274,6 @@ class PoswiseFeedwardNet(nn.Module):
             nn.ReLU(),
             nn.Linear(d_ff, d_model, bias=bias)
         )
-        # add a weight matrix to store the weights of the last linear layer 
-        # self.weight = self.fc[2].weight
-        # use named_children to get the last linear layer's weight matrix
-        self.weight = list(self.fc.named_children())[-1][1].weight
         
     # def forward(self, inputs):
     #     return self.fc(inputs)
@@ -283,12 +281,10 @@ class PoswiseFeedwardNet(nn.Module):
         # inputs: [batch_size, seq_len, d_model]
         # hidden: [batch_size, seq_len, d_ff]
         hidden = self.fc[0](inputs)
-        print(hidden.shape)
-        # count the number of negative values in hidden
+        # count the number of negative values in hidden (未激活的神经元)
         num_neg = torch.sum(hidden < 0)
-        # compute the ratio of negative values
+        # compute the ratio of negative values (未激活比例)
         ratio_neg = num_neg / hidden.numel()
-        # print('ratio_neg: ', ratio_neg)
         # apply ReLU and linear layer
         output = self.fc[1](hidden)
         output = self.fc[2](output)
@@ -303,7 +299,8 @@ class PoswiseFeedwardNet(nn.Module):
         output = self.fc[1](hidden)
         output = self.fc[2](output)
         # compute the class activation map by multiplying the weight matrix and the hidden features
-        cam = torch.matmul(self.weight, hidden.transpose(1, 2))
+        weight = self.fc[2].weight  # 直接访问权重
+        cam = torch.matmul(weight, hidden.transpose(1, 2))
         # normalize the cam to [0, 1] range
         cam = (cam - cam.min()) / (cam.max() - cam.min())
         # return the cam

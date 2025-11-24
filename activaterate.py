@@ -1,96 +1,23 @@
 # *_*coding:utf-8 *_*
 from nltk.translate.bleu_score import sentence_bleu
 import math
+import torch
 from tool.DataTool import *
 import torch.nn.functional as F
-from model.Transformer import Transformer
+from model.TransformerWithActivateRate import Transformer as TransformerBase
+from utils.beam_search import beamSearch
 
+
+# 创建一个包装类，使模型兼容beamSearch（只返回2个值）
+class TransformerWrapper(TransformerBase):
+    def forward(self, enc_input, dec_input, enc_output=None):
+        result = super().forward(enc_input, dec_input, enc_output)
+        # 返回格式为 (enc_output, result, enc_rates, dec_rates)
+        # 但beamSearch只需要前两个值
+        return result[0], result[1]  # 只返回 enc_output, result
 
 import warnings
 warnings.filterwarnings("ignore")
-
-# 束搜索
-def beamSearch(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id, source_sentence, k: int):
-    source_sentence = source_sentence.split(char_space)
-    dec_max_len = len(source_sentence) * 1.5
-
-    enc_input = []
-    for w in source_sentence:
-        enc_input.append(enc_vocab2id[w])
-
-    dec_input = []
-    dec_input.append(dec_vocab2id[char_start])
-
-    need_search = []
-    scores = []
-
-    final_result = []
-    final_scores = []
-
-    for _ in range(k):
-        need_search.append(dec_input.copy())
-        scores.append(0)
-
-    input_1 = torch.tensor([enc_input]).to(device)
-    input_2 = torch.tensor([dec_input]).to(device)
-    enc_output,output = model(input_1, input_2)
-
-    # 初始化,获取概率最大的k个单词的 id
-    proba = F.softmax(output[-1],dim=-1)
-    idxs = proba.argsort(descending=True).view(-1)[:k]
-    for i in range(k):
-        max_id = idxs.data[i].item()
-        need_search[i].append(max_id)
-        scores[i] = math.log(proba[max_id].item())
-
-    has_end = 0
-
-    while has_end < k:
-        temp_h = []
-        temp_score = []
-
-        for i in range(k - has_end):
-            dec_input = need_search[i]
-            sc = scores[i]
-
-            # 判断该序列是否有必要继续搜索
-            sentence_len = len(dec_input)
-            last_word_id = dec_input[len(dec_input) - 1]
-            last_word_vocab = dec_id2vocab[last_word_id]
-
-            if last_word_vocab == char_end or sentence_len >= dec_max_len:
-                has_end += 1
-                final_result.append(dec_input)
-                final_scores.append(sc)
-                continue
-
-            # 对该序列进行搜索
-            _,output = model(torch.tensor([enc_input]).to(device), torch.tensor([dec_input]).to(device),enc_output)
-
-            # 获取概率最大的k-hasend个单词的 id
-            output = F.softmax(output[-1],dim=-1)
-            idxs = output.argsort(descending=True).view(-1)[:k - has_end]
-
-            for i in range(k - has_end):
-                # print(idxs.data[i].item())
-                max_id = idxs.data[i].item()
-                sentence = dec_input.copy()
-                sentence.append(max_id)
-                temp_h.append(sentence)
-                temp_score.append(sc + math.log(output[max_id].item()))
-
-        # 如果k个句子都已经预测完成（达到最大长度或者结束符）
-        if has_end == k:
-            break
-
-        # 从temp_score中选择k-hasend个最大的，放入need_search中继续搜索
-        temp_score_ids = np.argsort(temp_score)[::-1]
-        for i in range(k - has_end):
-            max_s_id = temp_score_ids[i]
-            need_search[i] = temp_h[max_s_id].copy()
-            scores[i] = temp_score[max_s_id]
-
-    return final_scores, final_result
 
 
 
@@ -117,11 +44,104 @@ if __name__ == '__main__':
     print(dec_vocab2id[char_space])
     print('-----------------')
 
-    model = Transformer(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, device, 0, 0, 0.1)
-    m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
-    model.load_state_dict(m_state_dict)
-
+    # 使用基础模型来统计激活率
+    model_base = TransformerBase(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, device, 0, 0, 0.1)
+    
+    # 根据实际设备设置 map_location
+    if torch.cuda.is_available():
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
+    else:
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location=torch.device('cpu'))
+    # 使用 strict=False 因为模型结构稍有不同（移除weight引用属性）
+    model_base.load_state_dict(m_state_dict, strict=False)
+    model_base.eval()
+    
+    # 创建包装模型用于beamSearch（兼容旧接口）
+    model = TransformerWrapper(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, device, 0, 0, 0.1)
+    model.load_state_dict(m_state_dict, strict=False)
     model.eval()
+
+    # 用于统计激活率（未激活的神经元比例）
+    encoder_activation_rates = [[] for _ in range(num_layers)]  # 每层的激活率列表
+    decoder_activation_rates = [[] for _ in range(num_layers)]
+    total_samples = 0
+
+    print("\n开始统计FFN层激活率...")
+    with torch.no_grad():
+        # 先统计激活率
+        test_s = open(test_file_path, 'r', encoding='utf-8').readlines()
+        test_size_for_rate = min(100, len(test_s))  # 使用前100条数据统计激活率
+        
+        for line_idx, line in enumerate(test_s[:test_size_for_rate]):
+            if line_idx % 10 == 0:
+                print(f"  处理进度: {line_idx}/{test_size_for_rate}")
+            
+            parts = line.strip().split('\t')
+            if len(parts) < 2:
+                continue
+                
+            enc_input = parts[0]
+            target_sentence = parts[1]
+            
+            enc_input_ids = [enc_vocab2id.get(char, 0) for char in enc_input.split()]
+            if len(enc_input_ids) == 0:
+                continue
+                
+            # 构造一个简单的解码输入用于前向传播（只需要开始标记即可）
+            dec_input_ids = [dec_vocab2id.get(char_start, 0)]
+            
+            enc_input_tensor = torch.tensor([enc_input_ids], device=device)
+            dec_input_tensor = torch.tensor([dec_input_ids], device=device)
+            
+            try:
+                _, _, enc_rates, dec_rates = model_base(enc_input_tensor, dec_input_tensor)
+                if enc_rates is not None:
+                    for layer_idx, rate in enumerate(enc_rates):
+                        encoder_activation_rates[layer_idx].append(rate.item())
+                if dec_rates is not None:
+                    for layer_idx, rate in enumerate(dec_rates):
+                        decoder_activation_rates[layer_idx].append(rate.item())
+                total_samples += 1
+            except Exception as e:
+                continue
+    
+    # 计算并输出激活率统计
+    print("\n" + "="*60)
+    print("FFN层激活率统计结果（未激活神经元比例）")
+    print("="*60)
+    
+    print("\n【编码器 Encoder】")
+    for layer_idx in range(num_layers):
+        if encoder_activation_rates[layer_idx]:
+            avg_rate = sum(encoder_activation_rates[layer_idx]) / len(encoder_activation_rates[layer_idx])
+            activated_rate = 1 - avg_rate  # 激活率 = 1 - 未激活率
+            print(f"  第 {layer_idx+1} 层: 未激活比例 = {avg_rate:.4f} ({avg_rate*100:.2f}%), "
+                  f"激活比例 = {activated_rate:.4f} ({activated_rate*100:.2f}%)")
+    
+    print("\n【解码器 Decoder】")
+    for layer_idx in range(num_layers):
+        if decoder_activation_rates[layer_idx]:
+            avg_rate = sum(decoder_activation_rates[layer_idx]) / len(decoder_activation_rates[layer_idx])
+            activated_rate = 1 - avg_rate  # 激活率 = 1 - 未激活率
+            print(f"  第 {layer_idx+1} 层: 未激活比例 = {avg_rate:.4f} ({avg_rate*100:.2f}%), "
+                  f"激活比例 = {activated_rate:.4f} ({activated_rate*100:.2f}%)")
+    
+    # 计算总体平均
+    if encoder_activation_rates[0]:
+        all_enc_rates = [r for layer in encoder_activation_rates for r in layer]
+        avg_enc_rate = sum(all_enc_rates) / len(all_enc_rates) if all_enc_rates else 0
+        print(f"\n编码器平均未激活比例: {avg_enc_rate:.4f} ({avg_enc_rate*100:.2f}%)")
+        print(f"编码器平均激活比例: {1-avg_enc_rate:.4f} ({(1-avg_enc_rate)*100:.2f}%)")
+    
+    if decoder_activation_rates[0]:
+        all_dec_rates = [r for layer in decoder_activation_rates for r in layer]
+        avg_dec_rate = sum(all_dec_rates) / len(all_dec_rates) if all_dec_rates else 0
+        print(f"解码器平均未激活比例: {avg_dec_rate:.4f} ({avg_dec_rate*100:.2f}%)")
+        print(f"解码器平均激活比例: {1-avg_dec_rate:.4f} ({(1-avg_dec_rate)*100:.2f}%)")
+    
+    print("\n" + "="*60)
+    print("开始翻译测试...")
+    print("="*60 + "\n")
 
     bleu_score_1 = 0
     bleu_score_2 = 0

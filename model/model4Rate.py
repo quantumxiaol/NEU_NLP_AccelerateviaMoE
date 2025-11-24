@@ -5,7 +5,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-device = torch.device("cuda")
 
 # 采用pre_norm
 class Transformer(nn.Module):
@@ -296,7 +295,7 @@ class PoswiseFeedwardNet(nn.Module):
         andVector = torch.eq(hidden, output).long()
         # expChoice [[],[],[],[]] 8 * ni (sum(ni) = 1024)
         if expChoice is not None:
-            actiRate = torch.zeros([andVector.shape[1], len(expChoice)], device=device)
+            actiRate = torch.zeros([andVector.shape[1], len(expChoice)], device=inputs.device)
             for i in range(andVector.shape[1]):
                 index = 0
                 for exp in expChoice:
