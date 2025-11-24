@@ -388,11 +388,21 @@ class PoswiseFeedwardNet(nn.Module):
                 #### Embedding Expert Network ####
                 arList = nn.functional.softmax(expertModel(inputs))  # activation rate prediction list
                 arList = torch.sum(arList, dim=-2).view(-1)
-                sorted, indices = torch.sort(arList, descending=True)
+                # 根据设备类型选择排序方式：MPS 需要移到 CPU，CUDA/CPU 在原设备上排序
+                if arList.device.type == 'mps':
+                    # MPS 不支持 torch.sort(descending=True)，移到 CPU 排序
+                    arList_sort = arList.cpu()
+                    sorted, indices = torch.sort(arList_sort, descending=True)
+                    # indices 保持在 CPU 上，用于索引 Python 列表
+                    indices = indices
+                else:
+                    # CUDA 和 CPU 设备直接在原设备上排序，保持高效
+                    sorted, indices = torch.sort(arList, descending=True)
+                    indices = indices.cpu()  # 转换为 CPU tensor 用于索引 Python 列表
 
                 eChoice = []
                 for j in range(int(0.5 * len(indices))):
-                    eChoice.extend(expertList[indices[j]])
+                    eChoice.extend(expertList[indices[j].item()])
                 
                 self.indices = indices
                 self.eChoice = eChoice

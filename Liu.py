@@ -70,7 +70,8 @@ def beamSearch_Original(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_voc
 
     # 初始化,获取概率最大的k个单词的 id
     proba = F.softmax(output[-1],dim=-1)
-    idxs = proba.argsort(descending=True).view(-1)[:k]
+    _, idxs = torch.topk(proba, k, dim=-1)
+    idxs = idxs.view(-1)
     for i in range(k):
         max_id = idxs.data[i].item()
         need_search[i].append(max_id)
@@ -102,7 +103,8 @@ def beamSearch_Original(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_voc
 
             # 获取概率最大的k-hasend个单词的 id
             output = F.softmax(output[-1],dim=-1)
-            idxs = output.argsort(descending=True).view(-1)[:k - has_end]
+            _, idxs = torch.topk(output, k - has_end, dim=-1)
+            idxs = idxs.view(-1)
 
             for i in range(k - has_end):
                 # print(idxs.data[i].item())
@@ -153,7 +155,8 @@ def beamSearch_Expert(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab
 
     # 初始化,获取概率最大的k个单词的 id
     proba = F.softmax(output[-1],dim=-1)
-    idxs = proba.argsort(descending=True).view(-1)[:k]
+    _, idxs = torch.topk(proba, k, dim=-1)
+    idxs = idxs.view(-1)
     for i in range(k):
         max_id = idxs.data[i].item()
         need_search[i].append(max_id)
@@ -185,7 +188,8 @@ def beamSearch_Expert(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab
 
             # 获取概率最大的k-hasend个单词的 id
             output = F.softmax(output[-1],dim=-1)
-            idxs = output.argsort(descending=True).view(-1)[:k - has_end]
+            _, idxs = torch.topk(output, k - has_end, dim=-1)
+            idxs = idxs.view(-1)
 
             for i in range(k - has_end):
                 # print(idxs.data[i].item())
