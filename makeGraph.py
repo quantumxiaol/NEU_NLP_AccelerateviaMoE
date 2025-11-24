@@ -1,3 +1,18 @@
+"""
+生成共激活图
+
+该脚本用于生成FFN层神经元的共激活图，用于后续的专家划分。
+功能包括：
+- 在测试数据上运行模型
+- 记录神经元的共激活情况
+- 生成共激活图矩阵并保存为npy文件
+
+使用方法：
+    python makeGraph.py
+
+输出：
+- Expert/wIndex.npy: 共激活图矩阵
+"""
 import numpy as np
 from nltk.translate.bleu_score import sentence_bleu
 import math

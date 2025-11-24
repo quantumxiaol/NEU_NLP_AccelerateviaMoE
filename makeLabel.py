@@ -1,3 +1,19 @@
+"""
+生成门控网络训练标签
+
+该脚本用于生成训练门控网络（gate network）所需的标签数据。
+功能包括：
+- 在测试数据上运行模型
+- 记录每个样本激活的专家标签
+- 生成训练数据并保存为PT文件
+
+使用方法：
+    python makeLabel.py
+
+输出：
+- data4Gate/input/*.pt: 输入数据
+- data4Gate/label/*.pt: 标签数据
+"""
 import torch
 from nltk.translate.bleu_score import sentence_bleu
 import math

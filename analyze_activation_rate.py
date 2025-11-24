@@ -1,3 +1,19 @@
+"""
+分析FFN层激活率
+
+该脚本用于分析Transformer模型中FFN（前馈神经网络）层的激活率。
+功能包括：
+- 统计编码器和解码器各层的神经元激活率
+- 计算未激活神经元比例
+- 进行翻译测试并计算BLEU分数
+
+使用方法：
+    python analyze_activation_rate.py
+
+输出：
+- 各层的激活率统计信息
+- 翻译测试的BLEU分数
+"""
 # *_*coding:utf-8 *_*
 from nltk.translate.bleu_score import sentence_bleu
 import math

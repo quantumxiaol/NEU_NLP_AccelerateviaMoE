@@ -1,14 +1,30 @@
+"""
+测试MoE专家模型
+
+该脚本用于测试使用门控网络（gate network）的MoE专家模型的翻译性能。
+功能包括：
+- 加载训练好的专家模型和门控网络
+- 使用beam search进行翻译
+- 计算BLEU分数评估翻译质量
+- 统计翻译时间
+
+使用方法：
+    python test_expert_model.py
+"""
+import time
+import torch
 from nltk.translate.bleu_score import sentence_bleu
 import math
-import numpy as np
-import torch
 from tool.DataTool import *
+from tool.Global import *
 import torch.nn.functional as F
-from model.Transformer import Transformer
+from model.transformerWithExperts import Transformer
+from controlNN.model import gateModel
 from utils.beam_search import beamSearch
 import torch.nn as nn
 import warnings
 warnings.filterwarnings("ignore")
+
 
 if __name__ == '__main__':
     # 从环境变量获取设备，如果没有设置则使用默认值
@@ -37,43 +53,33 @@ if __name__ == '__main__':
     print(enc_vocab2id[char_space])
     print(dec_vocab2id[char_space])
     print('-----------------')
+    k = 8
     model = Transformer(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, device, 0, 0, 0.1)
     m_state_dict = torch.load('./save/de2en_2k.pt', map_location="cuda:{}".format(map_gpu_index))
     model.load_state_dict(m_state_dict)
-    wIndex = np.load('model/wIndex.npy')
-    # k 为k个专家
-    k = 4
-    # iP 为选择第iP个专家
-    iP = 3
-    for i in range(3):
-        W1 = model.encoder.layers[i].ffn.fc[0].weight.data
-        B1 = model.encoder.layers[i].ffn.fc[0].bias.data
-        W2 = model.encoder.layers[i].ffn.fc[2].weight.data
-        B2 = model.encoder.layers[i].ffn.fc[2].bias.data
-        model.encoder.layers[i].ffn.fc = nn.Sequential(
-            nn.Linear(d_model, int(d_ff / k), bias=True),
-            nn.ReLU(),
-            nn.Linear(int(d_ff / k), d_model, bias=True)
-        )
-        index = []
-        for j in range(len(wIndex[i])):
-            if wIndex[i][j] == iP:
-                index.append(j)
-        model.encoder.layers[i].ffn.fc[0].weight.data = W1[index, :]
-        model.encoder.layers[i].ffn.fc[0].bias.data = B1[index]
-        model.encoder.layers[i].ffn.fc[2].weight.data = W2[:, index]
-        model.encoder.layers[i].ffn.fc[2].bias.data = B2
+    w0f = open("Expert/index0.txt", "r")
+    w0Index = w0f.readlines()
+    w0Index = [int(x) for x in w0Index]
+    expertList = [[] for i in range(k)]
+    for i in range(len(w0Index)):
+        expertList[w0Index[i]].append(i)
+
+    expertModule = gateModel.gateNet(k)
+    expertModule.load_state_dict(torch.load("controlNN/weights/best.pth"))
+    expertModule.to(device)
     model = model.to(device)
     model.eval()
     bleu_score_1 = 0
     bleu_score_2 = 0
     bleu_score_3 = 0
     bleu_score_4 = 0
+    # 计算用时
+    start_time = time.time()
     with torch.no_grad():
         # 已知序列
         test_s = open(test_file_path, 'r', encoding='utf-8').readlines()
         # 取前50条进行测试
-        test_size = 872
+        test_size = 50
         for line in test_s[:test_size]:
             enc_input = line.split('\t')[0]
             enc_pre_1 = enc_input.replace(" ", "")
@@ -83,12 +89,12 @@ if __name__ == '__main__':
             target_sentence = target_sentence.replace(" ", "")
             target_sentence = target_sentence.replace("<e>", " ")
 
-            # print("原文：{}".format(enc_pre_1))
-            # print("参考译文：{}".format(target_sentence))
+            print("原文：{}".format(enc_pre_1))
+            print("参考译文：{}".format(target_sentence))
             k = 3
             enc_input = char_start + char_space + enc_input + char_space + char_end
-            search_sources, search_result = beamSearch(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id,
-                                                       enc_input, k)
+            search_sources, search_result = beamSearch(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id,enc_input, k, expertModule=expertModule, expertList=expertList)
+            # search_sources, search_result = beamSearch(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id,enc_input, k, None, None)
             for i in range(k):
                 dec_input = search_result[i]
                 # 将下标转化成句子
@@ -109,8 +115,8 @@ if __name__ == '__main__':
                 bleu_score_4 += sentence_bleu([target_sentence.split(char_space)], sent.split(char_space),
                                               weights=(0, 0, 0, 1))
 
-                # print('{:.3f},{}'.format(search_sources[i], sent))
-            # print(" ")
+                print('{:.3f},{}'.format(search_sources[i], sent))
+            print(" ")
         bleu_score_1 = bleu_score_1 / test_size / k
         bleu_score_2 = bleu_score_2 / test_size / k
         bleu_score_3 = bleu_score_3 / test_size / k
@@ -122,5 +128,6 @@ if __name__ == '__main__':
 
         print("mean bleu：{:.4f}".format((bleu_score_1 + bleu_score_2 + bleu_score_3 + bleu_score_4) / 4))
 
-
+    finish_time = time.time()
+    print("time:{:.4f}".format(finish_time - start_time))
 

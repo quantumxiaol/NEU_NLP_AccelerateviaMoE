@@ -1,3 +1,16 @@
+"""
+验证基础Transformer模型
+
+该脚本用于验证训练好的基础Transformer模型的翻译性能。
+功能包括：
+- 加载训练好的模型权重
+- 使用beam search进行翻译
+- 计算BLEU分数评估翻译质量
+- 统计翻译时间
+
+使用方法：
+    python vali.py
+"""
 from nltk.translate.bleu_score import sentence_bleu
 import math
 from tool.DataTool import *

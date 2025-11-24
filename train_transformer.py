@@ -1,3 +1,19 @@
+"""
+训练基础Transformer模型
+
+该脚本用于训练基础的Transformer模型进行德语到英语的翻译任务。
+功能包括：
+- 训练Transformer模型
+- 在验证集上评估模型性能
+- 自动保存模型权重
+- 记录训练进度和损失
+- 支持从检查点恢复训练
+
+使用方法：
+    python train_transformer.py
+
+注意：训练前需要准备好训练数据和验证数据。
+"""
 # *_*coding:utf-8 *_*
 import math
 import sys

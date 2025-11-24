@@ -8,7 +8,7 @@
 
 使用MoE进行加速推理。本项目基于前馈神经网络FFN层的稀疏性，划分出8个专家，训练出一个专家网络来选择激活不同的专家，直观感受激活不同专家数目能够加速的时间。
 
-补全数据和权重文件，运行Liu.py，即可对比加速前后的时间。
+补全数据和权重文件，运行`compare_models_gui.py`，即可对比加速前后的时间。
 
 ## 原有模型
 
@@ -35,7 +35,15 @@
     |   |- model/
     |   |- utils/
     |   |- weights/
-    |- Liu.py # 对比前后模型的加速效果
+    |- compare_models_gui.py # GUI工具：对比原始模型和MoE专家模型的加速效果
+    |- train_transformer.py # 训练基础Transformer模型
+    |- vali.py # 验证基础Transformer模型（命令行版本）
+    |- test_baseline.py # 测试基础Transformer模型（基线测试）
+    |- test_expert_model.py # 测试MoE专家模型
+    |- test_single_expert.py # 测试单个专家模型
+    |- analyze_activation_rate.py # 分析FFN层激活率
+    |- makeGraph.py # 生成共激活图用于专家划分
+    |- makeLabel.py # 生成门控网络训练标签
     |- data/ # 德英翻译数据集
     |- data4Gate # 训练门控网络（controlNN）的数据
     |- Expert/

@@ -1,3 +1,17 @@
+"""
+测试单个专家模型
+
+该脚本用于测试从完整模型中提取的单个专家模型的性能。
+功能包括：
+- 根据专家索引从完整模型中提取单个专家
+- 重构FFN层以仅包含该专家的神经元
+- 测试单个专家的翻译性能并计算BLEU分数
+
+使用方法：
+    python test_single_expert.py
+
+注意：需要先运行makeGraph.py生成专家划分结果。
+"""
 import numpy as np
 from nltk.translate.bleu_score import sentence_bleu
 import math

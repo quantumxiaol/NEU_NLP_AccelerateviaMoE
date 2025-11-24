@@ -1,3 +1,18 @@
+"""
+模型对比GUI工具
+
+该脚本提供了一个基于PyQt6的图形界面，用于对比原始Transformer模型和MoE专家模型的翻译效果。
+功能包括：
+- 对比原始模型和专家模型的翻译结果
+- 计算BLEU分数
+- 统计翻译时间
+- 计算加速比和准确率保持率
+
+使用方法：
+    python compare_models_gui.py
+
+注意：需要先训练好模型并准备好权重文件。
+"""
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QLabel, QLineEdit, QPushButton, QTextEdit)
 from PyQt6.QtCore import QObject, pyqtSignal as Signal

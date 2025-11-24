@@ -1,3 +1,18 @@
+"""
+测试基础Transformer模型（基线测试）
+
+该脚本用于测试训练好的基础Transformer模型的翻译性能。
+功能包括：
+- 加载训练好的模型权重
+- 使用beam search进行翻译
+- 计算BLEU分数评估翻译质量
+- 统计翻译时间
+
+使用方法：
+    python test_baseline.py
+
+注意：该脚本与vali.py功能类似，都是用于验证基础模型性能。
+"""
 # *_*coding:utf-8 *_*
 import datetime
 from nltk.translate.bleu_score import sentence_bleu
