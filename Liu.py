@@ -1,5 +1,6 @@
-import tkinter as tk
-from tkinter import scrolledtext
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
+                             QLabel, QLineEdit, QPushButton, QTextEdit)
+from PyQt6.QtCore import QObject, pyqtSignal as Signal
 import threading
 from nltk.translate.bleu_score import sentence_bleu
 import math
@@ -12,14 +13,33 @@ import time
 import queue
 import warnings
 warnings.filterwarnings("ignore")
+import os
+from dotenv import load_dotenv
+load_dotenv()
+# 从环境变量获取设备，如果没有设置则使用默认值
+device_str = os.getenv("DEVICE")
+if device_str is None:
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+else:
+    device = torch.device(device_str)
+print("running on device: ", device)
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 Original_Time = 0
 Expert_Time = 0
 Original_score = 0
 Expert_score = 0
 Time_Queue = queue.Queue()
 Score_Queue = queue.Queue()
+
+
+# 信号类，用于线程安全的GUI更新
+class TranslationSignals(QObject):
+    clear_text = Signal()
+    append_text = Signal(str)
+    update_time_label = Signal(str)
+    update_bleu_label = Signal(str)
+    update_time_accelerator = Signal(str)
+    update_score_accelerator = Signal(str)
 
 
 # 束搜索
@@ -189,11 +209,11 @@ def beamSearch_Expert(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab
     return final_scores, final_result
 
 
-def translate_Original(test_size, text_area, time_label,bleu_label, k=3):
+def translate_Original(test_size, signals, k=3):
     # 使用和原始代码相同的模型和词汇表处理
     global model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id
     # 清除文本区域
-    text_area.delete(1.0, tk.END)
+    signals.clear_text.emit()
 
     # 从文件中读取输入数据
     test_s = open(test_file_path, 'r', encoding='utf-8').readlines()
@@ -216,8 +236,8 @@ def translate_Original(test_size, text_area, time_label,bleu_label, k=3):
         reference_sentence = reference_sentence.replace(" ", "")
         reference_sentence = reference_sentence.replace("<e>", " ")
 
-        text_area.insert(tk.END, f'原文：{source_sentence_dieplay}\n')
-        text_area.insert(tk.END, f'参考译文：{reference_sentence}\n')
+        text_area.append(f'原文：{source_sentence_dieplay}')
+        text_area.append(f'参考译文：{reference_sentence}')
 
         enc_input = char_start + char_space + source_sentence + char_space + char_end
         search_scores, search_results = beamSearch_Original(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id, enc_input, k)
@@ -240,8 +260,8 @@ def translate_Original(test_size, text_area, time_label,bleu_label, k=3):
                                               weights=(0, 0, 1, 0))
             bleu_score_4 += sentence_bleu([reference_sentence.split(char_space)], sent.split(char_space),
                                               weights=(0, 0, 0, 1))
-            text_area.insert(tk.END, '{:.3f},{}\n'.format(search_scores[i], sent))
-        text_area.insert(tk.END, "\n")
+            text_area.append('{:.3f},{}'.format(search_scores[i], sent))
+        text_area.append("")
     bleu_score_1 = bleu_score_1 / test_size / k
     bleu_score_2 = bleu_score_2 / test_size / k
     bleu_score_3 = bleu_score_3 / test_size / k
@@ -265,37 +285,33 @@ def translate_Original(test_size, text_area, time_label,bleu_label, k=3):
     else:
         Expert_Time = Time_Queue.get()
         Time_Queue.put(Original_Time)
-    time_label.config(text=f'Original Model:Translation took {duration} seconds') # 打印输出时间
-    time_label.update_idletasks()  # 确保标签的更新
-    bleu_label.config(text=f'Original Model:Mean BLEU:{mean_bleu:.3f}')
-    bleu_label.update_idletasks()
+    signals.update_time_label.emit(f'Original Model:Translation took {duration} seconds') # 打印输出时间
+    signals.update_bleu_label.emit(f'Original Model:Mean BLEU:{mean_bleu:.3f}')
     # Expert_score = Score_Queue.get()
     # Expert_Time = Time_Queue.get()
     if Original_score != 0:
-    #     score_accelerator_lable.config(text=f'speed-up ratio: 0 ')
+    #     score_accelerator_lable.setText(f'speed-up ratio: 0 ')
     # else:
-        score_accelerator_lable.config(text=f'accuracy rate: {Expert_score/Original_score:.4f} ') 
-        score_accelerator_lable.update_idletasks()  # 确保标签的更新
+        signals.update_score_accelerator.emit(f'accuracy rate: {Expert_score/Original_score:.4f} ') 
     if Expert_Time != 0:
-    #     time_accelerator_lable.config(text=f'accuracy rate: 0 ')
+    #     time_accelerator_lable.setText(f'accuracy rate: 0 ')
     # else:
-        time_accelerator_lable.config(text=f'speed-up ratio: {Original_Time/Expert_Time:.4f} ')
-        time_accelerator_lable.update_idletasks()  # 确保标签的更新
+        signals.update_time_accelerator.emit(f'speed-up ratio: {Original_Time/Expert_Time:.4f} ')
 
-def run_translation_Original(entry, text_area, time_label,bleu_label):
-    test_size = entry.get()
+def run_translation_Original(entry, signals):
+    test_size = entry.text()
     if test_size == '':
         test_size = 10
     global Expert_score, Original_score, Expert_Time, Original_Time
-    thread = threading.Thread(target=translate_Original, args=(test_size, text_area, time_label,bleu_label))
+    thread = threading.Thread(target=translate_Original, args=(test_size, signals))
     thread.start()
     # thread.join()
 
-def translate_Expert(test_size, text_area, time_label,bleu_label, k=3):
+def translate_Expert(test_size, signals, k=3):
     # 使用和原始代码相同的模型和词汇表处理
     global model_expert, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id,expertModule, expertList
     # 清除文本区域
-    text_area.delete(1.0, tk.END)
+    signals.clear_text.emit()
 
     # 从文件中读取输入数据
     test_s = open(test_file_path, 'r', encoding='utf-8').readlines()
@@ -318,8 +334,8 @@ def translate_Expert(test_size, text_area, time_label,bleu_label, k=3):
         reference_sentence = reference_sentence.replace(" ", "")
         reference_sentence = reference_sentence.replace("<e>", " ")
 
-        text_area.insert(tk.END, f'原文：{source_sentence_dieplay}\n')
-        text_area.insert(tk.END, f'参考译文：{reference_sentence}\n')
+        signals.append_text.emit(f'原文：{source_sentence_dieplay}')
+        signals.append_text.emit(f'参考译文：{reference_sentence}')
 
         enc_input = char_start + char_space + source_sentence + char_space + char_end
         search_scores, search_results = beamSearch_Expert(model_expert, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id, enc_input, k,expertModule, expertList)
@@ -342,8 +358,8 @@ def translate_Expert(test_size, text_area, time_label,bleu_label, k=3):
                                               weights=(0, 0, 1, 0))
             bleu_score_4 += sentence_bleu([reference_sentence.split(char_space)], sent.split(char_space),
                                               weights=(0, 0, 0, 1))
-            text_area.insert(tk.END, '{:.3f},{}\n'.format(search_scores[i], sent))
-        text_area.insert(tk.END, "\n")
+            signals.append_text.emit('{:.3f},{}'.format(search_scores[i], sent))
+        signals.append_text.emit("")
     bleu_score_1 = bleu_score_1 / test_size / k
     bleu_score_2 = bleu_score_2 / test_size / k
     bleu_score_3 = bleu_score_3 / test_size / k
@@ -355,10 +371,8 @@ def translate_Expert(test_size, text_area, time_label,bleu_label, k=3):
     end_time = time.time() # 记录结束时间
     duration = end_time - start_time # 计算时间差
     Expert_Time = duration
-    time_label.config(text=f'Expert Model:Translation took {duration} seconds') # 打印输出时间
-    time_label.update_idletasks()  # 确保标签的更新
-    bleu_label.config(text=f'Expert Model:Mean BLEU:{mean_bleu:.3f}')
-    bleu_label.update_idletasks()
+    signals.update_time_label.emit(f'Expert Model:Translation took {duration} seconds') # 打印输出时间
+    signals.update_bleu_label.emit(f'Expert Model:Mean BLEU:{mean_bleu:.3f}')
     # 队列为空放入数据，否则取出数据
     if Score_Queue.empty():
         Expert_score = 0
@@ -377,28 +391,28 @@ def translate_Expert(test_size, text_area, time_label,bleu_label, k=3):
     # Original_score = Score_Queue.get()
     # Original_Time = Time_Queue.get()
     if Original_score != 0:
-    #     score_accelerator_lable.config(text=f'speed-up ratio: 0 ')
+    #     score_accelerator_lable.setText(f'speed-up ratio: 0 ')
     # else:
-        score_accelerator_lable.config(text=f'accuracy rate: {Expert_score/Original_score:.4f} ') 
-        score_accelerator_lable.update_idletasks()  # 确保标签的更新
+        signals.update_score_accelerator.emit(f'accuracy rate: {Expert_score/Original_score:.4f} ') 
     if Expert_Time != 0:
-    #     time_accelerator_lable.config(text=f'accuracy rate: 0 ')
+    #     time_accelerator_lable.setText(f'accuracy rate: 0 ')
     # else:
-        time_accelerator_lable.config(text=f'speed-up ratio: {Original_Time/Expert_Time:.4f} ')
-        time_accelerator_lable.update_idletasks()  # 确保标签的更新
+        signals.update_time_accelerator.emit(f'speed-up ratio: {Original_Time/Expert_Time:.4f} ')
 
-def run_translation_Expert(entry, text_area, time_label,bleu_label):
-    test_size = entry.get()
+def run_translation_Expert(entry, signals):
+    test_size = entry.text()
     if test_size == '':
         test_size = 10
     global Expert_score, Original_score, Expert_Time, Original_Time
-    thread = threading.Thread(target=translate_Expert, args=(test_size, text_area, time_label,bleu_label))
+    thread = threading.Thread(target=translate_Expert, args=(test_size, signals))
     thread.start()
     # thread.join()
 
 if __name__ == '__main__':
     # ... （和原始代码相同的初始化代码）
-    device = torch.device("cuda")
+    # device 已经在文件开头定义，这里不需要重新定义
+    # 如果需要在主函数中使用特定的设备，可以取消下面的注释
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     encoder_chars, decoder_chars, max_enc_seq_length, max_dec_seq_length = calculate_data()
     enc_vocab2id = {word: i for i, word in enumerate(encoder_chars)}
     enc_id2vocab = {i: word for i, word in enumerate(encoder_chars)}
@@ -408,7 +422,11 @@ if __name__ == '__main__':
 
 
     model = Transformer(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, device, 0, 0, 0.1)
-    m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
+    # 根据实际设备设置 map_location
+    if torch.cuda.is_available():
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
+    else:
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location=torch.device('cpu'))
     model.load_state_dict(m_state_dict)
     model.to(device)
     model.eval()
@@ -426,57 +444,96 @@ if __name__ == '__main__':
         expertList[w0Index[i]].append(i)
 
     expertModule = gateModel.gateNet(k)
-    expertModule.load_state_dict(torch.load("controlNN/weights/best.pth"))
+    # 根据实际设备设置 map_location
+    if torch.cuda.is_available():
+        expert_state_dict = torch.load("controlNN/weights/best.pth", map_location="cuda:{}".format(map_gpu_index))
+    else:
+        expert_state_dict = torch.load("controlNN/weights/best.pth", map_location=torch.device('cpu'))
+    expertModule.load_state_dict(expert_state_dict)
     expertModule.to(device)
 
-    root = tk.Tk()
-    # 设置大小
-    root.geometry('900x700')
-
-    # 设置标题？
-    root.title("Transformer MOE accelerator")
-    label = tk.Label(root, text="请输入test_size") # 创建一个Label组件，显示"请输入你的姓名"
-    label.pack() # 放置Label组件
-    entry = tk.Entry(root)
-    # 设置entry的文本提示
-    # entry.insert(0, "test_size")
-    entry.pack()
-    num = entry.get()
+    app = QApplication([])
+    window = QMainWindow()
+    window.setWindowTitle("Transformer MOE accelerator")
+    window.resize(900, 700)
+    
+    # 创建中央widget和布局
+    central_widget = QWidget()
+    window.setCentralWidget(central_widget)
+    layout = QVBoxLayout()
+    central_widget.setLayout(layout)
+    
+    # 创建标签和输入框
+    label = QLabel("请输入test_size")
+    layout.addWidget(label)
+    
+    entry = QLineEdit()
+    layout.addWidget(entry)
+    
+    num = entry.text()
     if num:
         test_size = int(num)
     else:
         test_size = 5
-    time_label = tk.Label(root, text="Original Model:Translation took 0 seconds")
-    time_label.pack()
-    time_label_expert = tk.Label(root, text="Expert Model:Translation took 0 seconds")
-    time_label_expert.pack()
-    bleu_label = tk.Label(root, text="Original Model:Mean BLEU:0")
-    bleu_label.pack()
-    bleu_label_expert = tk.Label(root, text="Expert Model:Mean BLEU:0")
-    bleu_label_expert.pack()
-    time_accelerator_lable = tk.Label(root, text="speed-up ratio:0")
-    time_accelerator_lable.pack()
-    score_accelerator_lable = tk.Label(root, text="accuracy rate:0")
-    score_accelerator_lable.pack()
     
-    translate_button = tk.Button(root, text="Original Model Translate", command=lambda: run_translation_Original(entry, text_area, time_label,bleu_label))
-    translate_button.pack()
-    translate_button_expert = tk.Button(root, text="Expert Model Translate", command=lambda: run_translation_Expert(entry, text_area, time_label_expert,bleu_label_expert))
-    translate_button_expert.pack()
-    text_area = scrolledtext.ScrolledText(root)
-    # 设置文本区域的大小
-    text_area['width'] = 400
-    text_area['height'] = 600
-    text_area.pack()
+    # 创建时间标签
+    time_label = QLabel("Original Model:Translation took 0 seconds")
+    layout.addWidget(time_label)
+    time_label_expert = QLabel("Expert Model:Translation took 0 seconds")
+    layout.addWidget(time_label_expert)
+    
+    # 创建BLEU标签
+    bleu_label = QLabel("Original Model:Mean BLEU:0")
+    layout.addWidget(bleu_label)
+    bleu_label_expert = QLabel("Expert Model:Mean BLEU:0")
+    layout.addWidget(bleu_label_expert)
+    
+    # 创建加速器标签
+    time_accelerator_lable = QLabel("speed-up ratio:0")
+    layout.addWidget(time_accelerator_lable)
+    score_accelerator_lable = QLabel("accuracy rate:0")
+    layout.addWidget(score_accelerator_lable)
+    
+    # 创建文本区域（需要在按钮之前创建，因为按钮的lambda会引用它）
+    text_area = QTextEdit()
+    text_area.setReadOnly(True)
+    layout.addWidget(text_area)
+    
+    # 创建信号对象用于Original模型
+    signals_original = TranslationSignals()
+    signals_original.clear_text.connect(text_area.clear)
+    signals_original.append_text.connect(text_area.append)
+    signals_original.update_time_label.connect(time_label.setText)
+    signals_original.update_bleu_label.connect(bleu_label.setText)
+    signals_original.update_time_accelerator.connect(time_accelerator_lable.setText)
+    signals_original.update_score_accelerator.connect(score_accelerator_lable.setText)
+    
+    # 创建信号对象用于Expert模型
+    signals_expert = TranslationSignals()
+    signals_expert.clear_text.connect(text_area.clear)
+    signals_expert.append_text.connect(text_area.append)
+    signals_expert.update_time_label.connect(time_label_expert.setText)
+    signals_expert.update_bleu_label.connect(bleu_label_expert.setText)
+    signals_expert.update_time_accelerator.connect(time_accelerator_lable.setText)
+    signals_expert.update_score_accelerator.connect(score_accelerator_lable.setText)
+    
+    # 创建按钮
+    translate_button = QPushButton("Original Model Translate")
+    translate_button.clicked.connect(lambda: run_translation_Original(entry, signals_original))
+    layout.addWidget(translate_button)
+    
+    translate_button_expert = QPushButton("Expert Model Translate")
+    translate_button_expert.clicked.connect(lambda: run_translation_Expert(entry, signals_expert))
+    layout.addWidget(translate_button_expert)
+    
     if Original_score != 0:
-    #     score_accelerator_lable.config(text=f'speed-up ratio: 0 ')
+    #     score_accelerator_lable.setText(f'speed-up ratio: 0 ')
     # else:
-        score_accelerator_lable.config(text=f'accuracy rate: {Expert_score/Original_score:.4f} ') 
-        score_accelerator_lable.update_idletasks()  # 确保标签的更新
+        score_accelerator_lable.setText(f'accuracy rate: {Expert_score/Original_score:.4f} ') 
     if Expert_Time != 0:
-    #     time_accelerator_lable.config(text=f'accuracy rate: 0 ')
+    #     time_accelerator_lable.setText(f'accuracy rate: 0 ')
     # else:
-        time_accelerator_lable.config(text=f'speed-up ratio: {Original_Time/Expert_Time:.4f} ')
-        time_accelerator_lable.update_idletasks()  # 确保标签的更新
+        time_accelerator_lable.setText(f'speed-up ratio: {Original_Time/Expert_Time:.4f} ')
     
-    root.mainloop()
+    window.show()
+    app.exec()

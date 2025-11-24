@@ -17,22 +17,21 @@ albumentations==1.3.0
 Pillow==10.2.0
 imageio==2.22.4
 tifffile==2022.10.10
-pydicom==2.3.1  # DICOM医学图像处理
+
 
 # ================== 自然语言处理 (NLP) ==================
 nltk==3.8.1
 sacrebleu==2.4.0
-openai==0.27.8  # OpenAI API 客户端
+
 
 # ================== 数据科学与机器学习 ==================
 numpy==1.23.5
 pandas==1.5.1
+scipy==1.9.3  # nltk依赖，必须安装
 scikit-learn==1.1.3
 imbalanced-learn==0.10.0
-xgboost==1.7.1
-scipy==1.10.1
 matplotlib==3.6.2
-seaborn==0.12.1
+
 
 # ================== 可视化与交互 ==================
 visdom==0.2.4
@@ -44,13 +43,13 @@ jupyter-server==1.23.2
 nbclassic==0.4.8
 pygraphviz @ file:///C:/b/abs_1es96so72y/croot/pygraphviz_1671045593193/work  # 需要Graphviz支持
 graphviz==0.20.1
+PyQt6==6.6.1  # GUI框架，替代tkinter
 
 # ================== 工具库与辅助功能 ==================
 tqdm==4.64.1  # 进度条
 regex==2023.6.3
 requests==2.28.1
 certifi==2022.9.24
-urllib3==1.26.12
 click==8.1.3  # 命令行工具构建
 omegaconf==2.0.6  # 配置管理
 hydra-core==1.0.7  # Hydra配置系统
