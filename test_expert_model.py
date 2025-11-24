@@ -55,7 +55,11 @@ if __name__ == '__main__':
     print('-----------------')
     k = 8
     model = Transformer(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, device, 0, 0, 0.1)
-    m_state_dict = torch.load('./save/de2en_2k.pt', map_location="cuda:{}".format(map_gpu_index))
+    # m_state_dict = torch.load('./save/de2en_2k.pt', map_location="cuda:{}".format(map_gpu_index))
+    if torch.cuda.is_available():
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
+    else:
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location=torch.device('cpu'))
     model.load_state_dict(m_state_dict)
     w0f = open("Expert/index0.txt", "r")
     w0Index = w0f.readlines()
@@ -65,7 +69,7 @@ if __name__ == '__main__':
         expertList[w0Index[i]].append(i)
 
     expertModule = gateModel.gateNet(k)
-    expertModule.load_state_dict(torch.load("controlNN/weights/best.pth"))
+    expertModule.load_state_dict(torch.load("controlNN/weights/best.pth", map_location=torch.device('cpu')))
     expertModule.to(device)
     model = model.to(device)
     model.eval()

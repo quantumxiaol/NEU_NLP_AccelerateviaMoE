@@ -17,8 +17,10 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QLabel, QLineEdit, QPushButton, QTextEdit)
 from PyQt6.QtCore import QObject, pyqtSignal as Signal
 import threading
+import sys
 from nltk.translate.bleu_score import sentence_bleu
 import math
+import torch
 from tool.DataTool import *
 import torch.nn.functional as F
 from model.Transformer import Transformer
@@ -85,8 +87,8 @@ def translate_Original(test_size, signals, k=3):
         reference_sentence = reference_sentence.replace(" ", "")
         reference_sentence = reference_sentence.replace("<e>", " ")
 
-        text_area.append(f'原文：{source_sentence_dieplay}')
-        text_area.append(f'参考译文：{reference_sentence}')
+        signals.append_text.emit(f'原文：{source_sentence_dieplay}')
+        signals.append_text.emit(f'参考译文：{reference_sentence}')
 
         enc_input = char_start + char_space + source_sentence + char_space + char_end
         search_scores, search_results = beamSearch_Original(model, enc_id2vocab, enc_vocab2id, dec_id2vocab, dec_vocab2id, enc_input, k)
@@ -109,8 +111,8 @@ def translate_Original(test_size, signals, k=3):
                                               weights=(0, 0, 1, 0))
             bleu_score_4 += sentence_bleu([reference_sentence.split(char_space)], sent.split(char_space),
                                               weights=(0, 0, 0, 1))
-            text_area.append('{:.3f},{}'.format(search_scores[i], sent))
-        text_area.append("")
+            signals.append_text.emit('{:.3f},{}'.format(search_scores[i], sent))
+        signals.append_text.emit("")
     bleu_score_1 = bleu_score_1 / test_size / k
     bleu_score_2 = bleu_score_2 / test_size / k
     bleu_score_3 = bleu_score_3 / test_size / k
@@ -301,7 +303,7 @@ if __name__ == '__main__':
     expertModule.load_state_dict(expert_state_dict)
     expertModule.to(device)
 
-    app = QApplication([])
+    app = QApplication(sys.argv)
     window = QMainWindow()
     window.setWindowTitle("Transformer MOE accelerator")
     window.resize(900, 700)
@@ -375,14 +377,8 @@ if __name__ == '__main__':
     translate_button_expert.clicked.connect(lambda: run_translation_Expert(entry, signals_expert))
     layout.addWidget(translate_button_expert)
     
-    if Original_score != 0:
-    #     score_accelerator_lable.setText(f'speed-up ratio: 0 ')
-    # else:
-        score_accelerator_lable.setText(f'accuracy rate: {Expert_score/Original_score:.4f} ') 
-    if Expert_Time != 0:
-    #     time_accelerator_lable.setText(f'accuracy rate: 0 ')
-    # else:
-        time_accelerator_lable.setText(f'speed-up ratio: {Original_Time/Expert_Time:.4f} ')
+    # 初始化时不需要设置这些值，它们会在翻译完成后通过信号更新
+    # 移除初始化时的计算，避免除零错误
     
     window.show()
     app.exec()

@@ -60,7 +60,11 @@ if __name__ == '__main__':
     print('-----------------')
 
     model = Transformer(len(encoder_chars), len(decoder_chars), d_model, d_ff, num_layers, num_heads, device, 0, 0, 0.1)
-    m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
+    # m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
+    if torch.cuda.is_available():
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location="cuda:{}".format(map_gpu_index))
+    else:
+        m_state_dict = torch.load('./save/de2en_2k_0020.pt', map_location=torch.device('cpu'))
     model.load_state_dict(m_state_dict)
     model.to(device)
 
